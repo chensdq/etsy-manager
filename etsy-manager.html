@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Etsy 商品录入管理系统</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- SheetJS for Excel import/export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Firebase SDK (compat version for easy CDN use) -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <style>
+        :root {
+            --etsy-orange: #F1641E;
+            --etsy-dark: #222222;
+            --etsy-light: #FAFAFA;
+            --sidebar-width: 260px;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+
+        /* ===== 登录/注册页面 ===== */
+        .auth-page {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f1641e20 0%, #f1641e05 50%, #667eea10 100%);
+        }
+        .auth-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.12);
+            padding: 40px;
+            width: 100%;
+            max-width: 440px;
+        }
+        .auth-card .logo-area {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+        .auth-card .logo-area .icon {
+            font-size: 48px;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .auth-card h2 {
+            font-weight: 700;
+            color: var(--etsy-dark);
+            margin: 0;
+        }
+        .auth-card p { color: #888; margin: 4px 0 0; }
+        .auth-toggle {
+            text-align: center;
+            margin-top: 18px;
+            color: #666;
+        }
+        .auth-toggle a {
+            color: var(--etsy-orange);
+            cursor: pointer;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .auth-toggle a:hover { text-decoration: underline; }
+
+        /* ===== 主应用布局 ===== */
+        .app-layout { display: flex; min-height: 100vh; }
+
+        /* 侧边栏 */
+        .sidebar {
+            width: var(--sidebar-width);
+            background: #1a1a2e;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 100;
+            transition: transform 0.3s;
+            overflow-y: auto;
+        }
+        .sidebar-brand {
+            padding: 20px;
+            border-bottom: 1px solid #ffffff15;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .sidebar-brand .bi { font-size: 24px; color: var(--etsy-orange); }
+        .sidebar-user {
+            padding: 16px 20px;
+            border-bottom: 1px solid #ffffff15;
+            font-size: 13px;
+            color: #aaa;
+        }
+        .sidebar-user strong { color: #eee; display: block; }
+        .sidebar-nav { flex: 1; padding: 12px 0; }
+        .sidebar-nav .nav-section {
+            padding: 8px 20px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-top: 8px;
+        }
+        .sidebar-nav button {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            color: #ccc;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+            text-align: left;
+            border-left: 3px solid transparent;
+        }
+        .sidebar-nav button:hover { background: #ffffff0a; color: #fff; }
+        .sidebar-nav button.active {
+            background: #ffffff10;
+            color: #fff;
+            border-left-color: var(--etsy-orange);
+        }
+        .sidebar-nav button .bi { font-size: 16px; width: 20px; text-align: center; }
+
+        /* 分类列表在侧边栏中 */
+        .sidebar-categories { padding: 0 20px 12px; }
+        .sidebar-categories .cat-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #ccc;
+            transition: all 0.15s;
+            margin-bottom: 2px;
+        }
+        .sidebar-categories .cat-item:hover { background: #ffffff0a; color: #fff; }
+        .sidebar-categories .cat-item.active { background: #f1641e30; color: var(--etsy-orange); font-weight: 600; }
+        .sidebar-categories .cat-item .cat-actions {
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .sidebar-categories .cat-item:hover .cat-actions { opacity: 1; }
+        .sidebar-categories .cat-actions button {
+            padding: 2px 6px;
+            font-size: 11px;
+            background: transparent;
+            border: 1px solid #ffffff30;
+            color: #aaa;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .sidebar-categories .cat-actions button:hover { background: #ffffff20; color: #fff; }
+        .sidebar-categories .add-cat-btn {
+            width: 100%;
+            padding: 6px;
+            margin-top: 6px;
+            background: #ffffff0a;
+            border: 1px dashed #ffffff30;
+            color: #999;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .sidebar-categories .add-cat-btn:hover { border-color: #ffffff60; color: #ccc; }
+
+        /* 主内容区 */
+        .main-area {
+            flex: 1;
+            margin-left: var(--sidebar-width);
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        /* 顶部栏 */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .topbar .search-wrap {
+            display: flex;
+            gap: 8px;
+            flex: 1;
+            max-width: 500px;
+        }
+        .topbar .search-wrap input {
+            flex: 1;
+            padding: 10px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        .topbar .search-wrap input:focus {
+            outline: none;
+            border-color: var(--etsy-orange);
+        }
+        .topbar .stats {
+            font-size: 14px;
+            color: #888;
+        }
+        .topbar .stats strong { color: #333; }
+
+        /* 按钮样式 */
+        .btn-etsy {
+            background: var(--etsy-orange);
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-etsy:hover { background: #d15517; transform: translateY(-1px); box-shadow: 0 4px 12px #f1641e40; }
+        .btn-etsy-outline {
+            background: #fff;
+            color: var(--etsy-orange);
+            border: 2px solid var(--etsy-orange);
+            padding: 8px 18px;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-etsy-outline:hover { background: #f1641e10; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 8px; }
+
+        /* 商品表格 */
+        .table-card {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            overflow: hidden;
+        }
+        .table-card .table-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .table-card .table-header h5 { margin: 0; font-weight: 700; }
+        .product-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .product-table th {
+            background: #fafafa;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: #555;
+            border-bottom: 2px solid #eee;
+            white-space: nowrap;
+        }
+        .product-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+        .product-table tbody tr { transition: background 0.15s; }
+        .product-table tbody tr:hover { background: #fafafa; }
+        .product-table .img-cell {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #f5f5f5;
+            border: 1px solid #eee;
+        }
+        .product-table .img-placeholder {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            background: #f5f5f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #ccc;
+            border: 1px solid #eee;
+        }
+        .product-table .price-cell { font-weight: 700; color: var(--etsy-orange); white-space: nowrap; }
+        .product-table .cat-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            background: #667eea15;
+            color: #667eea;
+            font-weight: 500;
+        }
+        .product-table .sku-cell { font-family: monospace; color: #888; font-size: 12px; }
+        .product-table .action-btns { display: flex; gap: 4px; }
+        .product-table .action-btns button {
+            padding: 4px 10px;
+            font-size: 12px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            background: #fff;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .product-table .action-btns .edit-btn:hover { background: #667eea15; border-color: #667eea; color: #667eea; }
+        .product-table .action-btns .del-btn:hover { background: #e74c3c15; border-color: #e74c3c; color: #e74c3c; }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #aaa;
+        }
+        .empty-state .bi { font-size: 48px; display: block; margin-bottom: 12px; }
+
+        /* 模态框样式 */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn 0.2s;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .modal-dialog {
+            background: #fff;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 580px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+            animation: slideUp 0.25s;
+        }
+        @keyframes slideUp { from { transform: translateY(30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .modal-dialog .modal-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            background: #fff;
+            border-radius: 16px 16px 0 0;
+            z-index: 1;
+        }
+        .modal-dialog .modal-header h5 { margin: 0; font-weight: 700; }
+        .modal-dialog .modal-header .close-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #999;
+            padding: 0;
+            line-height: 1;
+        }
+        .modal-dialog .modal-body { padding: 24px; }
+        .modal-dialog .modal-footer {
+            padding: 16px 24px;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 6px;
+            color: #555;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+            font-family: inherit;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--etsy-orange);
+        }
+        .form-group textarea { resize: vertical; min-height: 70px; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+
+        /* Toast */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .toast-msg {
+            padding: 12px 20px;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s;
+            max-width: 380px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast-success { background: #27ae60; }
+        .toast-error { background: #e74c3c; }
+        .toast-info { background: #667eea; }
+
+        /* 响应式 */
+        @media (max-width: 768px) {
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.open { transform: translateX(0); }
+            .main-area { margin-left: 0; }
+            .product-table { font-size: 12px; }
+            .product-table th, .product-table td { padding: 8px 10px; }
+            .form-row { flex-direction: column; }
+        }
+
+        /* 加载 */
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ddd;
+            border-top-color: var(--etsy-orange);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<!-- ============ 登录/注册页面 ============ -->
+<div id="authPage" class="auth-page">
+    <div class="auth-card">
+        <div class="logo-area">
+            <span class="icon">🛍️</span>
+            <h2 id="authTitle">登录 Etsy 商品管理</h2>
+            <p id="authSubtitle">管理您的 Etsy 商品库存</p>
+        </div>
+        <form id="authForm">
+            <div class="mb-3">
+                <label class="form-label fw-semibold">邮箱地址</label>
+                <input type="email" id="authEmail" class="form-control" placeholder="请输入邮箱" required
+                       style="padding:10px 14px;border-radius:10px;border:2px solid #e0e0e0;">
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-semibold">密码</label>
+                <input type="password" id="authPassword" class="form-control" placeholder="请输入密码（至少6位）" required minlength="6"
+                       style="padding:10px 14px;border-radius:10px;border:2px solid #e0e0e0;">
+            </div>
+            <div class="mb-3 hidden" id="confirmPwdGroup">
+                <label class="form-label fw-semibold">确认密码</label>
+                <input type="password" id="authConfirmPassword" class="form-control" placeholder="请再次输入密码" minlength="6"
+                       style="padding:10px 14px;border-radius:10px;border:2px solid #e0e0e0;">
+            </div>
+            <button type="submit" id="authSubmitBtn" class="btn-etsy w-100" style="justify-content:center;">
+                <i class="bi bi-box-arrow-in-right"></i> 登录
+            </button>
+        </form>
+        <div class="auth-toggle">
+            <span id="authToggleText">还没有账号？</span>
+            <a id="authToggleLink" onclick="toggleAuthMode()">立即注册</a>
+        </div>
+    </div>
+</div>
+
+<!-- ============ 主应用 ============ -->
+<div id="appPage" class="app-layout hidden">
+
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+            <i class="bi bi-shop"></i> Etsy 管理
+        </div>
+        <div class="sidebar-user">
+            👋 欢迎，<strong id="sidebarUserName">用户</strong>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-section">主菜单</div>
+            <button class="active" onclick="setView('products')" id="navProducts">
+                <i class="bi bi-grid"></i> 全部商品
+            </button>
+            <button onclick="openAddProductModal()" id="navAddProduct">
+                <i class="bi bi-plus-circle"></i> 添加商品
+            </button>
+            <div class="nav-section">数据工具</div>
+            <button onclick="triggerImport()">
+                <i class="bi bi-file-earmark-arrow-up"></i> 导入 CSV/Excel
+            </button>
+            <button onclick="exportProducts()">
+                <i class="bi bi-file-earmark-arrow-down"></i> 导出 CSV
+            </button>
+        </nav>
+
+        <!-- 分类列表 -->
+        <div class="nav-section">商品分类</div>
+        <div class="sidebar-categories" id="sidebarCategories">
+            <div class="cat-item active" data-category="all" onclick="filterByCategory('all')">
+                <span>📦 全部商品</span>
+            </div>
+            <!-- 动态生成分类 -->
+        </div>
+        <div style="padding: 0 20px 6px;">
+            <button class="add-cat-btn" onclick="openAddCategoryModal()">
+                <i class="bi bi-plus"></i> 添加分类
+            </button>
+        </div>
+
+        <!-- 底部退出 -->
+        <div style="padding: 16px 20px; border-top: 1px solid #ffffff15; margin-top: auto;">
+            <button class="btn-etsy-outline w-100 btn-sm" onclick="logout()" style="justify-content:center; border-color:#ffffff40; color:#ccc;">
+                <i class="bi bi-box-arrow-right"></i> 退出登录
+            </button>
+        </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main class="main-area" id="mainArea">
+        <!-- 顶部栏 -->
+        <div class="topbar">
+            <div class="search-wrap">
+                <input type="text" id="searchInput" placeholder="🔍 搜索商品名称、SKU、描述..." oninput="onSearchInput()">
+            </div>
+            <div class="stats">
+                共 <strong id="productCount">0</strong> 件商品 |
+                当前分类：<strong id="currentCategoryLabel">全部商品</strong>
+            </div>
+        </div>
+
+        <!-- 商品表格 -->
+        <div class="table-card">
+            <div class="table-header">
+                <h5><i class="bi bi-box-seam"></i> 商品列表</h5>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-etsy-outline btn-sm" onclick="triggerImport()">
+                        <i class="bi bi-upload"></i> 导入
+                    </button>
+                    <button class="btn-etsy btn-sm" onclick="openAddProductModal()">
+                        <i class="bi bi-plus-lg"></i> 添加商品
+                    </button>
+                </div>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="product-table">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">图片</th>
+                            <th>商品名称</th>
+                            <th>SKU</th>
+                            <th>分类</th>
+                            <th>价格</th>
+                            <th>库存</th>
+                            <th style="width:100px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTableBody">
+                        <!-- 动态生成 -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="emptyState" class="empty-state hidden">
+                <i class="bi bi-inbox"></i>
+                <p>暂无商品，点击"添加商品"开始录入</p>
+            </div>
+        </div>
+    </main>
+</div>
+
+<!-- ============ 商品表单模态框 ============ -->
+<div id="productModal" class="modal-overlay hidden">
+    <div class="modal-dialog">
+        <div class="modal-header">
+            <h5 id="productModalTitle">添加商品</h5>
+            <button class="close-btn" onclick="closeProductModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="productForm">
+                <input type="hidden" id="productFormId">
+                <div class="form-group">
+                    <label>商品名称 *</label>
+                    <input type="text" id="prodName" placeholder="例如：手工陶瓷马克杯" required>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>SKU *</label>
+                        <input type="text" id="prodSku" placeholder="例如：MUG-001" required>
+                    </div>
+                    <div class="form-group">
+                        <label>价格 (USD) *</label>
+                        <input type="number" id="prodPrice" placeholder="29.99" step="0.01" min="0" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>分类 *</label>
+                        <select id="prodCategory" required>
+                            <option value="">请选择分类</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>库存数量</label>
+                        <input type="number" id="prodStock" placeholder="0" min="0" value="0">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>图片链接</label>
+                    <input type="url" id="prodImage" placeholder="https://example.com/image.jpg">
+                    <small style="color:#999;">粘贴商品图片的URL地址</small>
+                </div>
+                <div class="form-group">
+                    <label>商品描述</label>
+                    <textarea id="prodDescription" placeholder="描述商品的特点、材质、尺寸等..." rows="3"></textarea>
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-etsy-outline" onclick="closeProductModal()">取消</button>
+            <button type="button" class="btn-etsy" onclick="saveProduct()">
+                <i class="bi bi-check-lg"></i> 保存
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ 分类表单模态框 ============ -->
+<div id="categoryModal" class="modal-overlay hidden">
+    <div class="modal-dialog" style="max-width:420px;">
+        <div class="modal-header">
+            <h5 id="categoryModalTitle">添加分类</h5>
+            <button class="close-btn" onclick="closeCategoryModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <form id="categoryForm">
+                <input type="hidden" id="categoryFormOldName">
+                <div class="form-group">
+                    <label>分类名称 *</label>
+                    <input type="text" id="catName" placeholder="例如：手工艺品" required>
+                </div>
+                <div class="form-group">
+                    <label>图标（emoji）</label>
+                    <input type="text" id="catIcon" placeholder="例如：🎨" maxlength="2">
+                </div>
+            </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn-etsy-outline" onclick="closeCategoryModal()">取消</button>
+            <button type="button" class="btn-etsy" onclick="saveCategory()">
+                <i class="bi bi-check-lg"></i> 保存
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- ============ 隐藏的文件导入input ============ -->
+<input type="file" id="importFileInput" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleFileImport(event)">
+
+<!-- Toast 容器 -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ====================================================================
+// 🔥 Firebase 配置 — 请替换为您自己的 Firebase 项目配置
+// ====================================================================
+const firebaseConfig = {
+    apiKey: "AIzaSyDM2vCmpNsM2DwoSM4toxa1JYRgVkweHf0",
+    authDomain: "etsy-shop-7b8fe.firebaseapp.com",
+    projectId: "etsy-shop-7b8fe",
+    storageBucket: "etsy-shop-7b8fe.firebasestorage.app",
+    messagingSenderId: "708267351232",
+    appId: "1:708267351232:web:257fd64634f0824a09a125",
+    measurementId: "G-W7RHL67K2C",
+    databaseURL: "https://etsy-shop-7b8fe-default-rtdb.firebaseio.com"
+};
+/*
+ * 替换步骤：
+ * 1. 前往 Firebase Console (https://console.firebase.google.com/)
+ * 2. 创建项目或选择现有项目
+ * 3. 在"项目设置" → "常规"中找到 Web 应用配置
+ * 4. 复制上面的配置项替换此处
+ * 5. 在 Firebase Console 中启用 Authentication（邮箱/密码登录）
+ * 6. 在 Firebase Console 中创建 Realtime Database（测试模式即可）
+ */
+
+// ====================================================================
+// 全局状态
+// ====================================================================
+let app, auth, database;
+let currentUser = null;
+let products = [];
+let categories = [];
+let currentFilterCategory = 'all';
+let searchQuery = '';
+let editingProductId = null;
+let editingCategoryName = null;
+
+// ====================================================================
+// 初始化 Firebase
+// ====================================================================
+function initFirebase() {
+    try {
+        app = firebase.initializeApp(firebaseConfig);
+        auth = firebase.auth();
+        database = firebase.database();
+        console.log('✅ Firebase 初始化成功');
+
+        // 监听认证状态
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                currentUser = user;
+                showApp();
+                loadCategories();
+                loadProducts();
+                document.getElementById('sidebarUserName').textContent = user.email;
+            } else {
+                currentUser = null;
+                showAuth();
+            }
+        });
+    } catch (error) {
+        console.error('❌ Firebase 初始化失败:', error);
+        showToast('Firebase 初始化失败，请检查配置。', 'error');
+    }
+}
+
+// ====================================================================
+// 页面切换
+// ====================================================================
+function showAuth() {
+    document.getElementById('authPage').classList.remove('hidden');
+    document.getElementById('appPage').classList.add('hidden');
+}
+
+function showApp() {
+    document.getElementById('authPage').classList.add('hidden');
+    document.getElementById('appPage').classList.remove('hidden');
+}
+
+// ====================================================================
+// 认证：登录 / 注册 / 退出
+// ====================================================================
+let isRegisterMode = false;
+
+function toggleAuthMode() {
+    isRegisterMode = !isRegisterMode;
+    if (isRegisterMode) {
+        document.getElementById('authTitle').textContent = '注册新账号';
+        document.getElementById('authSubtitle').textContent = '创建您的 Etsy 商品管理账号';
+        document.getElementById('authSubmitBtn').innerHTML = '<i class="bi bi-person-plus"></i> 注册';
+        document.getElementById('authToggleText').textContent = '已有账号？';
+        document.getElementById('authToggleLink').textContent = '立即登录';
+        document.getElementById('confirmPwdGroup').classList.remove('hidden');
+    } else {
+        document.getElementById('authTitle').textContent = '登录 Etsy 商品管理';
+        document.getElementById('authSubtitle').textContent = '管理您的 Etsy 商品库存';
+        document.getElementById('authSubmitBtn').innerHTML = '<i class="bi bi-box-arrow-in-right"></i> 登录';
+        document.getElementById('authToggleText').textContent = '还没有账号？';
+        document.getElementById('authToggleLink').textContent = '立即注册';
+        document.getElementById('confirmPwdGroup').classList.add('hidden');
+    }
+}
+
+document.getElementById('authForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+
+    if (isRegisterMode) {
+        const confirmPwd = document.getElementById('authConfirmPassword').value;
+        if (password !== confirmPwd) {
+            showToast('两次输入的密码不一致', 'error');
+            return;
+        }
+        // 注册
+        document.getElementById('authSubmitBtn').disabled = true;
+        document.getElementById('authSubmitBtn').innerHTML = '<span class="loading-spinner"></span> 注册中...';
+        auth.createUserWithEmailAndPassword(email, password)
+            .then(() => {
+                showToast('注册成功！欢迎加入 🎉', 'success');
+            })
+            .catch((err) => {
+                showToast('注册失败：' + getAuthErrorMessage(err.code), 'error');
+            })
+            .finally(() => {
+                document.getElementById('authSubmitBtn').disabled = false;
+                document.getElementById('authSubmitBtn').innerHTML = isRegisterMode
+                    ? '<i class="bi bi-person-plus"></i> 注册'
+                    : '<i class="bi bi-box-arrow-in-right"></i> 登录';
+            });
+    } else {
+        // 登录
+        document.getElementById('authSubmitBtn').disabled = true;
+        document.getElementById('authSubmitBtn').innerHTML = '<span class="loading-spinner"></span> 登录中...';
+        auth.signInWithEmailAndPassword(email, password)
+            .then(() => {
+                showToast('登录成功！', 'success');
+            })
+            .catch((err) => {
+                showToast('登录失败：' + getAuthErrorMessage(err.code), 'error');
+            })
+            .finally(() => {
+                document.getElementById('authSubmitBtn').disabled = false;
+                document.getElementById('authSubmitBtn').innerHTML = isRegisterMode
+                    ? '<i class="bi bi-person-plus"></i> 注册'
+                    : '<i class="bi bi-box-arrow-in-right"></i> 登录';
+            });
+    }
+});
+
+function logout() {
+    if (confirm('确定要退出登录吗？')) {
+        auth.signOut().then(() => {
+            products = [];
+            categories = [];
+            showToast('已退出登录', 'info');
+        });
+    }
+}
+
+function getAuthErrorMessage(code) {
+    const map = {
+        'auth/email-already-in-use': '该邮箱已被注册',
+        'auth/invalid-email': '邮箱格式不正确',
+        'auth/weak-password': '密码强度不足，至少需要6个字符',
+        'auth/user-not-found': '该账号不存在',
+        'auth/wrong-password': '密码错误',
+        'auth/invalid-credential': '邮箱或密码错误',
+        'auth/too-many-requests': '尝试次数过多，请稍后再试',
+    };
+    return map[code] || code;
+}
+
+// ====================================================================
+// 分类管理 (Firebase)
+// ====================================================================
+function loadCategories() {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    database.ref(`users/${uid}/categories`).on('value', (snapshot) => {
+        categories = [];
+        const data = snapshot.val();
+        if (data) {
+            Object.values(data).forEach(cat => {
+                categories.push(cat);
+            });
+        }
+        renderCategoryList();
+        updateCategorySelect();
+    });
+}
+
+function renderCategoryList() {
+    const container = document.getElementById('sidebarCategories');
+    let html = `
+        <div class="cat-item ${currentFilterCategory === 'all' ? 'active' : ''}" data-category="all" onclick="filterByCategory('all')">
+            <span>📦 全部商品</span>
+        </div>`;
+    categories.forEach(cat => {
+        const active = currentFilterCategory === cat.name ? 'active' : '';
+        const icon = cat.icon || '📁';
+        html += `
+        <div class="cat-item ${active}" data-category="${escapeHtml(cat.name)}" onclick="filterByCategory('${escapeHtml(cat.name)}')">
+            <span>${icon} ${escapeHtml(cat.name)}</span>
+            <span class="cat-actions">
+                <button onclick="event.stopPropagation();openEditCategoryModal('${escapeAttr(cat.name)}', '${escapeAttr(cat.icon || '')}')" title="编辑">✏️</button>
+                <button onclick="event.stopPropagation();deleteCategory('${escapeAttr(cat.name)}')" title="删除">🗑️</button>
+            </span>
+        </div>`;
+    });
+    container.innerHTML = html;
+}
+
+function updateCategorySelect() {
+    const select = document.getElementById('prodCategory');
+    if (!select) return;
+    let html = '<option value="">请选择分类</option>';
+    categories.forEach(cat => {
+        html += `<option value="${escapeHtml(cat.name)}">${cat.icon || '📁'} ${escapeHtml(cat.name)}</option>`;
+    });
+    select.innerHTML = html;
+}
+
+function openAddCategoryModal() {
+    editingCategoryName = null;
+    document.getElementById('categoryModalTitle').textContent = '添加分类';
+    document.getElementById('categoryFormOldName').value = '';
+    document.getElementById('catName').value = '';
+    document.getElementById('catIcon').value = '';
+    document.getElementById('categoryModal').classList.remove('hidden');
+}
+
+function openEditCategoryModal(name, icon) {
+    editingCategoryName = name;
+    document.getElementById('categoryModalTitle').textContent = '编辑分类';
+    document.getElementById('categoryFormOldName').value = name;
+    document.getElementById('catName').value = name;
+    document.getElementById('catIcon').value = icon;
+    document.getElementById('categoryModal').classList.remove('hidden');
+}
+
+function closeCategoryModal() {
+    document.getElementById('categoryModal').classList.add('hidden');
+    editingCategoryName = null;
+}
+
+function saveCategory() {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    const name = document.getElementById('catName').value.trim();
+    const icon = document.getElementById('catIcon').value.trim() || '📁';
+
+    if (!name) { showToast('请输入分类名称', 'error'); return; }
+
+    const oldName = document.getElementById('categoryFormOldName').value.trim();
+
+    if (oldName && oldName !== name) {
+        // 编辑模式：删除旧分类，创建新分类，同时更新所有商品
+        // 先检查新名称是否已存在
+        if (categories.find(c => c.name === name)) {
+            showToast('该分类名称已存在', 'error');
+            return;
+        }
+
+        // 更新分类
+        database.ref(`users/${uid}/categories`).transaction((cats) => {
+            if (cats) {
+                const newCats = {};
+                Object.keys(cats).forEach(key => {
+                    if (cats[key].name === oldName) {
+                        newCats[key] = { name: name, icon: icon };
+                    } else {
+                        newCats[key] = cats[key];
+                    }
+                });
+                return newCats;
+            }
+            return cats;
+        });
+
+        // 更新所有使用该分类的商品
+        database.ref(`users/${uid}/products`).once('value').then(snap => {
+            const data = snap.val();
+            if (data) {
+                const updates = {};
+                Object.keys(data).forEach(key => {
+                    if (data[key].category === oldName) {
+                        updates[`users/${uid}/products/${key}/category`] = name;
+                    }
+                });
+                if (Object.keys(updates).length > 0) {
+                    database.ref().update(updates);
+                }
+            }
+        });
+
+        showToast('分类已更新', 'success');
+    } else if (!oldName) {
+        // 新增模式
+        if (categories.find(c => c.name === name)) {
+            showToast('该分类名称已存在', 'error');
+            return;
+        }
+        database.ref(`users/${uid}/categories`).push({ name, icon });
+        showToast('分类添加成功', 'success');
+    } else {
+        // 名称没变，只更新图标
+        database.ref(`users/${uid}/categories`).transaction((cats) => {
+            if (cats) {
+                const newCats = {};
+                Object.keys(cats).forEach(key => {
+                    if (cats[key].name === oldName) {
+                        newCats[key] = { name: name, icon: icon };
+                    } else {
+                        newCats[key] = cats[key];
+                    }
+                });
+                return newCats;
+            }
+            return cats;
+        });
+        showToast('分类已更新', 'success');
+    }
+
+    closeCategoryModal();
+}
+
+function deleteCategory(name) {
+    if (!confirm(`确定删除分类"${name}"吗？\n\n使用该分类的商品将变为"未分类"。`)) return;
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+
+    // 删除分类
+    database.ref(`users/${uid}/categories`).once('value').then(snap => {
+        const data = snap.val();
+        if (data) {
+            Object.keys(data).forEach(key => {
+                if (data[key].name === name) {
+                    database.ref(`users/${uid}/categories/${key}`).remove();
+                }
+            });
+        }
+    });
+
+    // 将该分类下的商品设为"未分类"
+    database.ref(`users/${uid}/products`).once('value').then(snap => {
+        const data = snap.val();
+        if (data) {
+            const updates = {};
+            Object.keys(data).forEach(key => {
+                if (data[key].category === name) {
+                    updates[`users/${uid}/products/${key}/category`] = '未分类';
+                }
+            });
+            if (Object.keys(updates).length > 0) {
+                database.ref().update(updates);
+            }
+        }
+    });
+
+    if (currentFilterCategory === name) {
+        currentFilterCategory = 'all';
+    }
+    showToast('分类已删除', 'success');
+}
+
+// ====================================================================
+// 商品管理 (Firebase)
+// ====================================================================
+function loadProducts() {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    database.ref(`users/${uid}/products`).on('value', (snapshot) => {
+        products = [];
+        const data = snapshot.val();
+        if (data) {
+            Object.keys(data).forEach(key => {
+                products.push({
+                    id: key,
+                    ...data[key]
+                });
+            });
+        }
+        renderProducts();
+    });
+}
+
+function renderProducts() {
+    const tbody = document.getElementById('productTableBody');
+    const emptyState = document.getElementById('emptyState');
+    const countEl = document.getElementById('productCount');
+
+    // 过滤
+    let filtered = products;
+    if (currentFilterCategory !== 'all') {
+        filtered = filtered.filter(p => p.category === currentFilterCategory);
+    }
+    if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(p =>
+            (p.name && p.name.toLowerCase().includes(q)) ||
+            (p.sku && p.sku.toLowerCase().includes(q)) ||
+            (p.description && p.description.toLowerCase().includes(q))
+        );
+    }
+
+    countEl.textContent = filtered.length;
+    document.getElementById('currentCategoryLabel').textContent =
+        currentFilterCategory === 'all' ? '全部商品' : currentFilterCategory;
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+    }
+    emptyState.classList.add('hidden');
+
+    tbody.innerHTML = filtered.map(p => {
+        const imgHtml = p.image
+            ? `<img src="${escapeHtml(p.image)}" class="img-cell" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" loading="lazy"><div class="img-placeholder" style="display:none;">📷</div>`
+            : `<div class="img-placeholder">📷</div>`;
+        return `
+        <tr>
+            <td>${imgHtml}</td>
+            <td>
+                <strong>${escapeHtml(p.name || '')}</strong>
+                <br><small style="color:#999;">${escapeHtml((p.description || '').substring(0, 60))}${(p.description || '').length > 60 ? '...' : ''}</small>
+            </td>
+            <td class="sku-cell">${escapeHtml(p.sku || '-')}</td>
+            <td><span class="cat-badge">${escapeHtml(p.category || '未分类')}</span></td>
+            <td class="price-cell">$${parseFloat(p.price || 0).toFixed(2)}</td>
+            <td>${p.stock !== undefined ? p.stock : '-'}</td>
+            <td class="action-btns">
+                <button class="edit-btn" onclick="openEditProductModal('${escapeAttr(p.id)}')" title="编辑"><i class="bi bi-pencil"></i></button>
+                <button class="del-btn" onclick="deleteProduct('${escapeAttr(p.id)}')" title="删除"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function openAddProductModal() {
+    editingProductId = null;
+    document.getElementById('productModalTitle').textContent = '添加商品';
+    document.getElementById('productFormId').value = '';
+    document.getElementById('prodName').value = '';
+    document.getElementById('prodSku').value = '';
+    document.getElementById('prodPrice').value = '';
+    document.getElementById('prodCategory').value = '';
+    document.getElementById('prodStock').value = '0';
+    document.getElementById('prodImage').value = '';
+    document.getElementById('prodDescription').value = '';
+    document.getElementById('productModal').classList.remove('hidden');
+}
+
+function openEditProductModal(productId) {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    editingProductId = productId;
+    document.getElementById('productModalTitle').textContent = '编辑商品';
+    document.getElementById('productFormId').value = productId;
+    document.getElementById('prodName').value = product.name || '';
+    document.getElementById('prodSku').value = product.sku || '';
+    document.getElementById('prodPrice').value = product.price || '';
+    document.getElementById('prodCategory').value = product.category || '';
+    document.getElementById('prodStock').value = product.stock !== undefined ? product.stock : 0;
+    document.getElementById('prodImage').value = product.image || '';
+    document.getElementById('prodDescription').value = product.description || '';
+    document.getElementById('productModal').classList.remove('hidden');
+}
+
+function closeProductModal() {
+    document.getElementById('productModal').classList.add('hidden');
+    editingProductId = null;
+}
+
+function saveProduct() {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+
+    const name = document.getElementById('prodName').value.trim();
+    const sku = document.getElementById('prodSku').value.trim();
+    const price = parseFloat(document.getElementById('prodPrice').value);
+    const category = document.getElementById('prodCategory').value;
+    const stock = parseInt(document.getElementById('prodStock').value) || 0;
+    const image = document.getElementById('prodImage').value.trim();
+    const description = document.getElementById('prodDescription').value.trim();
+
+    // 验证
+    if (!name) { showToast('请输入商品名称', 'error'); return; }
+    if (!sku) { showToast('请输入SKU', 'error'); return; }
+    if (isNaN(price) || price < 0) { showToast('请输入有效的价格', 'error'); return; }
+    if (!category) { showToast('请选择分类', 'error'); return; }
+
+    // 检查SKU唯一性（排除当前编辑的商品）
+    const skuExists = products.some(p => p.sku === sku && p.id !== editingProductId);
+    if (skuExists) { showToast('该SKU已存在，请使用其他SKU', 'error'); return; }
+
+    const productData = {
+        name,
+        sku,
+        price,
+        category,
+        stock,
+        image,
+        description,
+        updatedAt: new Date().toISOString()
+    };
+
+    if (editingProductId) {
+        // 编辑
+        database.ref(`users/${uid}/products/${editingProductId}`).update(productData)
+            .then(() => {
+                showToast('商品更新成功 ✅', 'success');
+                closeProductModal();
+            })
+            .catch(err => showToast('更新失败：' + err.message, 'error'));
+    } else {
+        // 新增
+        productData.createdAt = new Date().toISOString();
+        database.ref(`users/${uid}/products`).push(productData)
+            .then(() => {
+                showToast('商品添加成功 🎉', 'success');
+                closeProductModal();
+            })
+            .catch(err => showToast('添加失败：' + err.message, 'error'));
+    }
+}
+
+function deleteProduct(productId) {
+    if (!confirm('确定要删除该商品吗？此操作不可恢复。')) return;
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    database.ref(`users/${uid}/products/${productId}`).remove()
+        .then(() => showToast('商品已删除', 'info'))
+        .catch(err => showToast('删除失败：' + err.message, 'error'));
+}
+
+// ====================================================================
+// 搜索 & 筛选
+// ====================================================================
+function onSearchInput() {
+    searchQuery = document.getElementById('searchInput').value.trim();
+    renderProducts();
+}
+
+function filterByCategory(catName) {
+    currentFilterCategory = catName;
+    renderCategoryList();
+    renderProducts();
+}
+
+function setView(view) {
+    // 导航按钮高亮
+    document.querySelectorAll('.sidebar-nav button').forEach(b => b.classList.remove('active'));
+    if (view === 'products') document.getElementById('navProducts').classList.add('active');
+}
+
+// ====================================================================
+// 导入导出
+// ====================================================================
+function triggerImport() {
+    document.getElementById('importFileInput').click();
+}
+
+function handleFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+            if (rows.length < 2) {
+                showToast('文件为空或格式不正确', 'error');
+                return;
+            }
+
+            // 自动匹配表头
+            const headers = rows[0].map(h => String(h || '').toLowerCase().trim());
+            const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('名称') || h.includes('商品'));
+            const skuIdx = headers.findIndex(h => h === 'sku' || h.includes('sku'));
+            const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('价格') || h.includes('金额'));
+            const categoryIdx = headers.findIndex(h => h.includes('category') || h.includes('分类') || h.includes('类别'));
+            const stockIdx = headers.findIndex(h => h.includes('stock') || h.includes('库存') || h.includes('数量'));
+            const imageIdx = headers.findIndex(h => h.includes('image') || h.includes('图片') || h.includes('照片') || h.includes('url'));
+            const descIdx = headers.findIndex(h => h.includes('description') || h.includes('描述') || h.includes('说明'));
+
+            if (nameIdx === -1) {
+                showToast('未找到"商品名称"列，请检查表头。\n支持的列名: name, 名称, 商品名称', 'error');
+                return;
+            }
+
+            let importCount = 0;
+            const uid = currentUser.uid;
+            const batchData = {};
+
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                if (!row || !row[nameIdx]) continue;
+
+                const name = String(row[nameIdx] || '').trim();
+                const sku = skuIdx >= 0 ? String(row[skuIdx] || '').trim() : ('AUTO-' + Date.now() + '-' + i);
+                const price = priceIdx >= 0 ? parseFloat(row[priceIdx]) || 0 : 0;
+                const category = categoryIdx >= 0 ? String(row[categoryIdx] || '').trim() : '未分类';
+                const stock = stockIdx >= 0 ? parseInt(row[stockIdx]) || 0 : 0;
+                const image = imageIdx >= 0 ? String(row[imageIdx] || '').trim() : '';
+                const description = descIdx >= 0 ? String(row[descIdx] || '').trim() : '';
+
+                const newKey = database.ref(`users/${uid}/products`).push().key;
+                batchData[`users/${uid}/products/${newKey}`] = {
+                    name, sku, price, category, stock, image, description,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+                importCount++;
+            }
+
+            if (importCount === 0) {
+                showToast('没有可导入的数据', 'error');
+                return;
+            }
+
+            database.ref().update(batchData)
+                .then(() => showToast(`成功导入 ${importCount} 件商品！🎉`, 'success'))
+                .catch(err => showToast('导入失败：' + err.message, 'error'));
+
+        } catch (err) {
+            showToast('文件解析失败：' + err.message, 'error');
+        }
+    };
+    reader.readAsArrayBuffer(file);
+    // 重置input，允许重复导入同一文件
+    event.target.value = '';
+}
+
+function exportProducts() {
+    if (products.length === 0) {
+        showToast('没有商品可导出', 'info');
+        return;
+    }
+
+    let exportData = products;
+    if (currentFilterCategory !== 'all') {
+        exportData = products.filter(p => p.category === currentFilterCategory);
+    }
+
+    const rows = [['商品名称', 'SKU', '价格(USD)', '分类', '库存', '图片链接', '描述']];
+    exportData.forEach(p => {
+        rows.push([
+            p.name || '',
+            p.sku || '',
+            p.price || 0,
+            p.category || '',
+            p.stock || 0,
+            p.image || '',
+            p.description || ''
+        ]);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '商品列表');
+
+    // 设置列宽
+    worksheet['!cols'] = [
+        { wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 40 }, { wch: 30 }
+    ];
+
+    const fileName = `etsy-products-${new Date().toISOString().slice(0, 10)}.csv`;
+    XLSX.writeFile(workbook, fileName);
+    showToast(`已导出 ${exportData.length} 件商品`, 'success');
+}
+
+// ====================================================================
+// Toast 消息提示
+// ====================================================================
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast-msg toast-${type}`;
+
+    const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+    toast.innerHTML = `<span>${icons[type] || ''}</span> ${message}`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ====================================================================
+// 工具函数
+// ====================================================================
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function escapeAttr(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ====================================================================
+// 关闭模态框（点击背景）
+// ====================================================================
+document.getElementById('productModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeProductModal();
+});
+document.getElementById('categoryModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeCategoryModal();
+});
+
+// ====================================================================
+// 键盘快捷键
+// ====================================================================
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (!document.getElementById('productModal').classList.contains('hidden')) {
+            closeProductModal();
+        } else if (!document.getElementById('categoryModal').classList.contains('hidden')) {
+            closeCategoryModal();
+        }
+    }
+});
+
+// ====================================================================
+// 启动应用
+// ====================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    initFirebase();
+});
+</script>
+
+</body>
+</html>
